@@ -1,0 +1,47 @@
+name: belgique
+description: "La Belgique est une destination de voyage idéale, riche en diversité malgré sa petite taille."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  google_fonts: ^8.2.1
+  shared_preferences: ^2.5.5
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets4/logo.png"
+  web:
+    generate: true
+    image_path: "assets4/logo.png"
+    background_color: "#161616"
+    theme_color: "#D4AF37"
+  windows:
+    generate: true
+    image_path: "assets4/logo.png"
+    icon_size: 256
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets4/belgique/anvers/
+    - assets4/belgique/bruges/
+    - assets4/belgique/bruxelles/
+    - assets4/belgique/gand/
+    - assets4/belgique/liege/

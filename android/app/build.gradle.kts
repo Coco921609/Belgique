@@ -25,7 +25,7 @@ android {
         applicationId = "com.belgique.belgique"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 18
+        versionCode = 19
         versionName = "14.0.0"
     }
 

@@ -1253,7 +1253,7 @@ class _FavorisEnPageState extends State<FavorisEnPage> {
     },
     'mannekenpis': {
       'titre': 'Manneken-Pis and Jeanneke-Pis',
-      'images': ['assets4/belgique/bruxelles/12.webp', 'assets4/belgique/bruxelles/14.jpg'],
+      'images': ['assets4/belgique/bruxelles/199.jpg', 'assets4/belgique/bruxelles/14.jpg'],
       'quartier': 'Historic Center',
       'dossier': 'Brussels'
     },

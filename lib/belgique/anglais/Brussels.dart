@@ -78,7 +78,7 @@ class _BruxellesState extends State<Brussels> {
           'id': 'mannekenpis',
           'titre': 'Manneken-Pis and Jeanneke-Pis',
           'images': [
-            'assets4/belgique/bruxelles/12.webp',
+            'assets4/belgique/bruxelles/199.jpg',
             'assets4/belgique/bruxelles/14.jpg',
           ],
           'histoire':
@@ -917,7 +917,7 @@ class _FavorisBruxellesPageState extends State<FavorisBruxellesPage> {
         'quartier': 'Historic Center',
         'lieux': [
           {'id': 'grandplace', 'titre': 'Grand-Place', 'images': ['assets4/belgique/bruxelles/9.jpg']},
-          {'id': 'mannekenpis', 'titre': 'Manneken-Pis and Jeanneke-Pis', 'images': ['assets4/belgique/bruxelles/12.webp']},
+          {'id': 'mannekenpis', 'titre': 'Manneken-Pis and Jeanneke-Pis', 'images': ['assets4/belgique/bruxelles/199.jpg']},
           {'id': 'galeries', 'titre': 'Royal Saint-Hubert Galleries', 'images': ['assets4/belgique/bruxelles/15.jpg']},
           {'id': 'montdesarts', 'titre': 'Mont des Arts', 'images': ['assets4/belgique/bruxelles/16.jpg']},
           {'id': 'palaisjustice', 'titre': 'Palace of Justice', 'images': ['assets4/belgique/bruxelles/18.jpg']},

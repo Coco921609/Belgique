@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:belgique/belgique/français/bruges.dart';
 import 'package:belgique/belgique/français/Gand.dart';
@@ -15,7 +18,39 @@ class Home extends StatefulWidget {
   State<Home> createState() => _HomeState();
 }
 
-class _HomeState extends State<Home> {
+
+class _HomeState extends State<Home> with TickerProviderStateMixin {
+  static const Color _bg = Color(0xFF040407);
+  static const Color _gold = Color(0xFFD4AF37);
+  static const Color _champagne = Color(0xFFF3E5AB);
+
+  late final AnimationController _auroraCtrl; // dérive lente du fond
+  late final AnimationController _shimmerCtrl; // reflet du titre, pulsations, zoom des photos
+  late final AnimationController _entranceCtrl; // apparition en cascade
+  final ScrollController _scroll = ScrollController();
+  final ValueNotifier<double> _scrollY = ValueNotifier<double>(0);
+
+  @override
+  void initState() {
+    super.initState();
+    _auroraCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 22))..repeat();
+    _shimmerCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat();
+    _entranceCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600))..forward();
+    _scroll.addListener(() {
+      _scrollY.value = _scroll.hasClients ? _scroll.offset : 0;
+    });
+  }
+
+  @override
+  void dispose() {
+    _auroraCtrl.dispose();
+    _shimmerCtrl.dispose();
+    _entranceCtrl.dispose();
+    _scroll.dispose();
+    _scrollY.dispose();
+    super.dispose();
+  }
+
   final List<Map<String, String>> villes = [
     {
       'nom': 'Bruxelles',
@@ -45,18 +80,17 @@ class _HomeState extends State<Home> {
   ];
 
   void _afficherGenerateur(BuildContext context) {
+    HapticFeedback.selectionClick();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0F172A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.6),
       builder: (BuildContext context) {
         return DraggableScrollableSheet(
-          initialChildSize: 0.9,
+          initialChildSize: 0.92,
           minChildSize: 0.5,
-          maxChildSize: 0.95,
+          maxChildSize: 0.97,
           expand: false,
           builder: (context, scrollController) {
             return _GenerateurWidget(scrollController: scrollController);
@@ -67,11 +101,29 @@ class _HomeState extends State<Home> {
   }
 
   void _lancerRoulettePrincipale(BuildContext context) {
-    showDialog(
+    HapticFeedback.mediumImpact();
+    showGeneralDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
+      barrierLabel: 'Roulette',
+      barrierColor: Colors.black.withOpacity(0.6),
+      transitionDuration: const Duration(milliseconds: 480),
+      pageBuilder: (dialogContext, a1, a2) {
         return _RouletteDialog(villes: villes, parentContext: context);
+      },
+      transitionBuilder: (ctx, anim, secondary, child) {
+        final CurvedAnimation curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 1.06, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
       },
     );
   }
@@ -109,6 +161,90 @@ class _HomeState extends State<Home> {
     );
   }
 
+  // =========================================================================
+  //  INTERFACE 2026 : aurore animée, verre fumé, or impérial, apparitions en
+  //  cascade, parallaxe du titre, cartes-villes plein cadre (Ken Burns).
+  // =========================================================================
+
+  // Apparition en cascade : chaque bloc entre l'un après l'autre.
+  Widget _reveal(int index, Widget child) {
+    final double start = (index * 0.07).clamp(0.0, 0.8);
+    final double end = (start + 0.35).clamp(0.0, 1.0);
+    return AnimatedBuilder(
+      animation: _entranceCtrl,
+      child: child,
+      builder: (context, ch) {
+        final double p = Curves.easeOutCubic.transform(
+          ((_entranceCtrl.value - start) / (end - start)).clamp(0.0, 1.0),
+        );
+        return Opacity(
+          opacity: p,
+          child: Transform.translate(offset: Offset(0, (1 - p) * 28), child: ch),
+        );
+      },
+    );
+  }
+
+  Widget _glass({
+    required Widget child,
+    double radius = 22,
+    Color tint = Colors.white,
+    double tintOpacity = 0.07,
+    Color? border,
+    EdgeInsetsGeometry padding = EdgeInsets.zero,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                tint.withOpacity(tintOpacity * 1.8),
+                tint.withOpacity(tintOpacity * 0.4),
+              ],
+            ),
+            border: Border.all(
+              color: border ?? Colors.white.withOpacity(0.12),
+              width: 0.8,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _ornament() {
+    Widget line(bool left) => Container(
+      width: 46,
+      height: 1,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: left ? Alignment.centerLeft : Alignment.centerRight,
+          end: left ? Alignment.centerRight : Alignment.centerLeft,
+          colors: [_gold.withOpacity(0.0), _champagne.withOpacity(0.9)],
+        ),
+      ),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        line(true),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: Icon(Icons.diamond_outlined, color: _champagne, size: 13),
+        ),
+        line(false),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Theme(
@@ -118,466 +254,1245 @@ class _HomeState extends State<Home> {
         splashFactory: NoSplash.splashFactory,
         hoverColor: Colors.transparent,
       ),
-      child: Scaffold(
-        backgroundColor: const Color(0xFF070913),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        child: Scaffold(
+          backgroundColor: _bg,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ---- Aurore animée (fixe, derrière le contenu) ----
+              RepaintBoundary(
+                child: CustomPaint(painter: _AuroraPainter(_auroraCtrl)),
+              ),
+              SafeArea(
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => Navigator.pop(context),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8.0),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.arrow_back_ios_new_rounded,
-                                color: Colors.white70,
-                                size: 16,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Retour',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            PageRouteBuilder(
-                              pageBuilder: (context, animation, secondaryAnimation) => const FavorisFrPage(),
-                              transitionDuration: Duration.zero,
-                              reverseTransitionDuration: Duration.zero,
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFBBF24).withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.3)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(Icons.favorite_rounded, size: 16, color: Color(0xFFFBBF24)),
-                              SizedBox(width: 6),
-                              Text(
-                                'Favoris',
-                                style: TextStyle(
-                                  color: Color(0xFFFBBF24),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      _reveal(0, _buildTopBar(context)),
+                      const SizedBox(height: 26),
+                      _reveal(1, _buildHero()),
+                      const SizedBox(height: 26),
+                      _reveal(2, _buildStats()),
+                      const SizedBox(height: 22),
+                      _reveal(3, _buildBento(context)),
+                      const SizedBox(height: 38),
+                      _reveal(4, _buildSectionTitle()),
+                      const SizedBox(height: 18),
+                      for (int i = 0; i < villes.length; i++)
+                        _reveal(5 + i, _buildVilleCard(context, i, villes[i])),
+                      const SizedBox(height: 14),
+                      Center(child: _ornament()),
+                      const SizedBox(height: 40),
                     ],
                   ),
-
-                  const SizedBox(height: 15),
-
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24.0),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          const Color(0xFF1E293B).withOpacity(0.9),
-                          const Color(0xFF0F172A).withOpacity(0.95),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: Colors.white.withOpacity(0.08)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.5),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFBBF24).withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  Icon(Icons.star_rounded, size: 14, color: Color(0xFFFBBF24)),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Destination',
-                                    style: TextStyle(
-                                      color: Color(0xFFFBBF24),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Découvrez la Belgique 🇧🇪',
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Explorez un pays riche en traditions, en culture et en paysages urbains captivants, entre châteaux historiques et douceurs légendaires.',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 25),
-
-                  _buildGenerateurIntroCard(context),
-
-                  const SizedBox(height: 16),
-
-                  _buildRouletteMainCard(context),
-
-                  const SizedBox(height: 30),
-
-                  const Text(
-                    'Les Villes Incontournables',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  ...villes.map((ville) => _buildVilleCard(
-                    context,
-                    nom: ville['nom']!,
-                    image: ville['image']!,
-                    description: ville['description']!,
-                  )),
-
-                  const SizedBox(height: 40),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGenerateurIntroCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20.0),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF2563EB).withOpacity(0.2),
-            const Color(0xFF1E1B4B).withOpacity(0.4),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: const [
-              Icon(Icons.auto_awesome_rounded, color: Color(0xFF60A5FA), size: 22),
-              SizedBox(width: 8),
-              Text(
-                'Planificateur de Visite',
-                style: TextStyle(
-                  color: Color(0xFF60A5FA),
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          const Text(
-            'Quand visiter la Belgique ? 🗓️',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Obtenez les meilleures périodes de visite par ville (hors vacances scolaires, en semaine à visiter, pour éviter les week-ends trop chargés).',
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[300],
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 14),
-          ElevatedButton.icon(
-            onPressed: () => _afficherGenerateur(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3B82F6),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              elevation: 0,
-            ),
-            icon: const Icon(Icons.flash_on_rounded, size: 16),
-            label: const Text(
-              'Lancer le Générateur',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildRouletteMainCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20.0),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF8B5CF6).withOpacity(0.2),
-            const Color(0xFF1E1B4B).withOpacity(0.4),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: const [
-              Icon(Icons.casino_rounded, color: Color(0xFFA78BFA), size: 22),
-              SizedBox(width: 8),
-              Text(
-                'Indécis sur la destination ?',
-                style: TextStyle(
-                  color: Color(0xFFA78BFA),
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
+  // ---- Barre du haut : retour + favoris, en verre fumé ----
+  Widget _buildTopBar(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _PressScale(
+          onTap: () => Navigator.pop(context),
+          child: _glass(
+            radius: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white70, size: 14),
+                const SizedBox(width: 8),
+                Text(
+                  'RETOUR',
+                  style: GoogleFonts.montserrat(
+                    color: Colors.white70,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 2.2,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'La Roulette des Villes 🎲',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+              ],
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Laissez le hasard choisir votre prochaine ville belge en un seul clic !',
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[300],
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 14),
-          ElevatedButton.icon(
-            onPressed: () => _lancerRoulettePrincipale(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF8B5CF6),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              elevation: 0,
-            ),
-            icon: const Icon(Icons.play_arrow_rounded, size: 16),
-            label: const Text(
-              'Tourner la Roulette',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVilleCard(
-      BuildContext context, {
-        required String nom,
-        required String image,
-        required String description,
-      }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        _navigateToCityPage(context, nom);
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 20.0),
-        padding: const EdgeInsets.all(16.0),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F172A),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.4),
-              blurRadius: 15,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.asset(
-                image,
-                width: 90,
-                height: 90,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    width: 90,
-                    height: 90,
-                    color: Colors.grey[850],
-                    child: const Icon(Icons.location_city, color: Colors.white54),
+        _PressScale(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            Navigator.push(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) => const FavorisFrPage(),
+                transitionDuration: const Duration(milliseconds: 520),
+                reverseTransitionDuration: const Duration(milliseconds: 380),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  final CurvedAnimation curved = CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  );
+                  return FadeTransition(
+                    opacity: curved,
+                    child: SlideTransition(
+                      position: Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero).animate(curved),
+                      child: child,
+                    ),
                   );
                 },
               ),
+            );
+          },
+          child: _glass(
+            radius: 30,
+            tint: _gold,
+            tintOpacity: 0.12,
+            border: _gold.withOpacity(0.45),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.favorite_rounded, size: 14, color: _gold),
+                const SizedBox(width: 8),
+                Text(
+                  'FAVORIS',
+                  style: GoogleFonts.montserrat(
+                    color: _champagne,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.2,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        nom,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---- Titre : reflet d'or qui glisse + parallaxe au défilement ----
+  Widget _buildHero() {
+    return ValueListenableBuilder<double>(
+      valueListenable: _scrollY,
+      builder: (context, y, child) {
+        final double off = y.clamp(0.0, 400.0);
+        return Opacity(
+          opacity: (1 - off / 380).clamp(0.25, 1.0),
+          child: Transform.translate(offset: Offset(0, off * 0.18), child: child),
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'DÉCOUVREZ LA',
+            style: GoogleFonts.montserrat(
+              color: _champagne.withOpacity(0.85),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 6,
+            ),
+          ),
+          const SizedBox(height: 4),
+          AnimatedBuilder(
+            animation: _shimmerCtrl,
+            builder: (context, _) {
+              final double s = _shimmerCtrl.value * 1.7 - 0.35;
+              double st(double v) => v.clamp(0.0, 1.0).toDouble();
+              return ShaderMask(
+                shaderCallback: (Rect r) => LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: const [
+                    Color(0xFFD4AF37),
+                    Color(0xFFF3E5AB),
+                    Color(0xFFFFFBEA),
+                    Color(0xFFF3E5AB),
+                    Color(0xFFD4AF37),
+                  ],
+                  stops: [st(s - 0.3), st(s - 0.12), st(s), st(s + 0.12), st(s + 0.3)],
+                ).createShader(r),
+                child: Text(
+                  'Belgique',
+                  style: GoogleFonts.cinzel(
+                    fontSize: 58,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 4,
+                    height: 1.05,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Colors.grey[400],
-                      height: 1.3,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+          Container(
+            height: 2,
+            width: 72,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(2),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF000000), Color(0xFFD4AF37), Color(0xFF7A0C0C)],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Explorez un pays riche en traditions, en culture et en paysages urbains captivants, entre châteaux historiques et douceurs légendaires.',
+            style: GoogleFonts.montserrat(
+              fontSize: 13.5,
+              color: Colors.white.withOpacity(0.68),
+              height: 1.65,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- Chiffres qui s'incrémentent ----
+  Widget _buildStats() {
+    Widget cell(int value, String label) {
+      return Expanded(
+        child: Column(
+          children: [
+            TweenAnimationBuilder<int>(
+              tween: IntTween(begin: 0, end: value),
+              duration: const Duration(milliseconds: 1800),
+              curve: Curves.easeOutCubic,
+              builder: (context, v, _) => Text(
+                '$v',
+                style: GoogleFonts.cinzel(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: _champagne,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: GoogleFonts.montserrat(
+                fontSize: 9.5,
+                color: Colors.white54,
+                letterSpacing: 2,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget sep() => Container(
+      width: 0.8,
+      height: 34,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            _gold.withOpacity(0.0),
+            _gold.withOpacity(0.6),
+            _gold.withOpacity(0.0),
+          ],
+        ),
+      ),
+    );
+
+    return _glass(
+      radius: 26,
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Row(
+        children: [
+          cell(villes.length, 'VILLES'),
+          sep(),
+          cell(12, 'MOIS ANALYSÉS'),
+          sep(),
+          cell(2, 'OUTILS'),
+        ],
+      ),
+    );
+  }
+
+  // ---- Deux tuiles : planificateur + roulette ----
+  Widget _buildBento(BuildContext context) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _buildTile(
+              icon: Icons.auto_awesome_rounded,
+              accent: const Color(0xFF60A5FA),
+              kicker: 'PLANIFICATEUR',
+              titre: 'Quand visiter la Belgique ?',
+              texte: 'Les meilleures périodes par ville, hors vacances scolaires et week-ends chargés.',
+              cta: 'LANCER',
+              onTap: () => _afficherGenerateur(context),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildTile(
+              icon: Icons.casino_rounded,
+              accent: const Color(0xFFA78BFA),
+              kicker: 'INDÉCIS ?',
+              titre: 'La Roulette des Villes',
+              texte: 'Laissez le hasard choisir votre prochaine ville belge en un seul clic.',
+              cta: 'TOURNER',
+              onTap: () => _lancerRoulettePrincipale(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTile({
+    required IconData icon,
+    required Color accent,
+    required String kicker,
+    required String titre,
+    required String texte,
+    required String cta,
+    required VoidCallback onTap,
+  }) {
+    return _PressScale(
+      onTap: onTap,
+      child: _glass(
+        radius: 26,
+        tint: accent,
+        tintOpacity: 0.12,
+        border: accent.withOpacity(0.35),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Icône qui pulse
+                AnimatedBuilder(
+                  animation: _shimmerCtrl,
+                  builder: (context, _) {
+                    final double g = 0.5 + 0.5 * sin(_shimmerCtrl.value * 2 * pi);
+                    return Container(
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFBBF24).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Text(
-                            'Découvrir',
-                            style: TextStyle(
-                              color: Color(0xFFFBBF24),
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        shape: BoxShape.circle,
+                        color: accent.withOpacity(0.16),
+                        border: Border.all(color: accent.withOpacity(0.45), width: 0.8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: accent.withOpacity(0.18 + 0.3 * g),
+                            blurRadius: 8 + 14 * g,
                           ),
-                          SizedBox(width: 4),
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 12,
-                            color: Color(0xFFFBBF24),
+                        ],
+                      ),
+                      child: Icon(icon, color: accent, size: 20),
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  kicker,
+                  style: GoogleFonts.montserrat(
+                    color: accent,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.4,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  titre,
+                  style: GoogleFonts.cinzel(
+                    color: Colors.white,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.bold,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  texte,
+                  style: GoogleFonts.montserrat(
+                    color: Colors.white.withOpacity(0.62),
+                    fontSize: 11.5,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Text(
+                  cta,
+                  style: GoogleFonts.montserrat(
+                    color: Colors.white,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.2,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward_rounded, color: accent, size: 14),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle() {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Les Villes Incontournables',
+            style: GoogleFonts.cinzel(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          width: 40,
+          height: 1,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_gold.withOpacity(0.0), _champagne.withOpacity(0.9)],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---- Carte-ville plein cadre : photo qui respire, dégradé, verre ----
+  Widget _buildVilleCard(BuildContext context, int i, Map<String, String> v) {
+    final String nom = v['nom']!;
+    return _PressScale(
+      scale: 0.975,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        _navigateToCityPage(context, nom);
+      },
+      child: Container(
+        height: 214,
+        margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: _gold.withOpacity(0.28), width: 0.8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.55),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+            BoxShadow(
+              color: _gold.withOpacity(0.06),
+              blurRadius: 30,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(27),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Photo avec léger zoom lent (Ken Burns)
+              AnimatedBuilder(
+                animation: _shimmerCtrl,
+                child: Image.asset(
+                  v['image']!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF1B1840), Color(0xFF0B0A1E)],
+                      ),
+                    ),
+                    child: const Icon(Icons.location_city, color: Colors.white24, size: 48),
+                  ),
+                ),
+                builder: (context, ch) {
+                  final double z = 1.08 + 0.04 * sin(_shimmerCtrl.value * 2 * pi + i);
+                  return Transform.scale(scale: z, child: ch);
+                },
+              ),
+              // Dégradé de lisibilité
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.10),
+                      Colors.black.withOpacity(0.25),
+                      Colors.black.withOpacity(0.90),
+                    ],
+                    stops: const [0.0, 0.45, 1.0],
+                  ),
+                ),
+              ),
+              // Numéro
+              Positioned(
+                top: 14,
+                left: 14,
+                child: _glass(
+                  radius: 20,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Text(
+                    '0${i + 1}',
+                    style: GoogleFonts.cinzel(
+                      color: _champagne,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ),
+              ),
+              // Texte
+              Positioned(
+                left: 18,
+                right: 18,
+                bottom: 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      nom,
+                      style: GoogleFonts.cinzel(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.5,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.6),
+                            blurRadius: 14,
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      v['description']!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.montserrat(
+                        fontSize: 11.5,
+                        color: Colors.white.withOpacity(0.78),
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Text(
+                          'DÉCOUVRIR',
+                          style: GoogleFonts.montserrat(
+                            color: _champagne,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 2.6,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _gold.withOpacity(0.18),
+                            border: Border.all(color: _gold.withOpacity(0.6), width: 0.8),
+                          ),
+                          child: const Icon(Icons.arrow_forward_rounded,
+                              size: 13, color: _champagne),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// --- DIALOGUE DE LA ROULETTE (PAGE PRINCIPALE) ---
+// ---------------------------------------------------------------------------
+//  Fond : trois nappes de lumière (or, violet, bleu-vert) qui dérivent
+//  lentement sur le noir obsidienne.
+// ---------------------------------------------------------------------------
+class _AuroraPainter extends CustomPainter {
+  final Animation<double> t;
+
+  _AuroraPainter(this.t) : super(repaint: t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final double a = t.value * 2 * pi;
+
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), Paint()..color = const Color(0xFF040407));
+
+    void blob(Offset c, double r, Color col, double op) {
+      canvas.drawCircle(
+        c,
+        r,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [col.withOpacity(op), col.withOpacity(0.0)],
+          ).createShader(Rect.fromCircle(center: c, radius: r)),
+      );
+    }
+
+    blob(Offset(w * (0.18 + 0.14 * sin(a)), h * (0.10 + 0.05 * cos(a))), w * 0.85,
+        const Color(0xFFD4AF37), 0.20);
+    blob(Offset(w * (0.88 + 0.10 * cos(a + 1)), h * (0.38 + 0.08 * sin(a + 2))), w * 0.95,
+        const Color(0xFF3B2A7A), 0.38);
+    blob(Offset(w * (0.30 + 0.20 * cos(a + 3)), h * (0.78 + 0.06 * sin(a))), w * 0.95,
+        const Color(0xFF0E4D5C), 0.32);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AuroraPainter oldDelegate) => false;
+}
+
+// ---------------------------------------------------------------------------
+//  Effet de pression : le bloc se contracte légèrement sous le doigt.
+// ---------------------------------------------------------------------------
+class _PressScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final double scale;
+
+  const _PressScale({required this.child, required this.onTap, this.scale = 0.96});
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _down = true),
+      onTapCancel: () => setState(() => _down = false),
+      onTapUp: (_) => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? widget.scale : 1.0,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+//  BRIQUES PARTAGÉES 2026 — roulette, générateur et favoris
+// ===========================================================================
+const Color _kBg = Color(0xFF040407);
+const Color _kGold = Color(0xFFD4AF37);
+const Color _kChampagne = Color(0xFFF3E5AB);
+
+const Map<String, String> _kVilleImages = {
+  'Bruxelles': 'assets4/belgique/bruxelles/77.jpg',
+  'Gand': 'assets4/belgique/gand/11.webp',
+  'Bruges': 'assets4/belgique/bruges/19.jpeg',
+  'Anvers': 'assets4/belgique/anvers/12.jpg',
+  'Liège': 'assets4/belgique/liege/16.jpg',
+};
+
+Widget _photo(String path, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
+  return Image.asset(
+    path,
+    width: width,
+    height: height,
+    fit: fit,
+    errorBuilder: (context, error, stackTrace) => Container(
+      width: width,
+      height: height,
+      color: const Color(0xFF14141C),
+      child: const Icon(Icons.image_not_supported_outlined, color: Colors.white24, size: 22),
+    ),
+  );
+}
+
+Widget _glassBox({
+  required Widget child,
+  double radius = 22,
+  Color tint = Colors.white,
+  double tintOpacity = 0.07,
+  Color? border,
+  EdgeInsetsGeometry padding = EdgeInsets.zero,
+  double blur = 16,
+}) {
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(radius),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              tint.withOpacity(tintOpacity * 1.8),
+              tint.withOpacity(tintOpacity * 0.4),
+            ],
+          ),
+          border: Border.all(color: border ?? Colors.white.withOpacity(0.12), width: 0.8),
+        ),
+        child: child,
+      ),
+    ),
+  );
+}
+
+// ---- Fond aurore réutilisable (couleurs au choix) ----
+class _AuroraBackdrop extends StatefulWidget {
+  final Color a;
+  final Color b;
+  final Color c;
+  const _AuroraBackdrop({
+    this.a = const Color(0xFFD4AF37),
+    this.b = const Color(0xFF3B2A7A),
+    this.c = const Color(0xFF0E4D5C),
+  });
+
+  @override
+  State<_AuroraBackdrop> createState() => _AuroraBackdropState();
+}
+
+class _AuroraBackdropState extends State<_AuroraBackdrop> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _TintAuroraPainter(_ctrl, widget.a, widget.b, widget.c),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _TintAuroraPainter extends CustomPainter {
+  final Animation<double> t;
+  final Color a;
+  final Color b;
+  final Color c;
+  _TintAuroraPainter(this.t, this.a, this.b, this.c) : super(repaint: t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final double k = t.value * 2 * pi;
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), Paint()..color = _kBg);
+
+    void blob(Offset center, double r, Color col, double op) {
+      canvas.drawCircle(
+        center,
+        r,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [col.withOpacity(op), col.withOpacity(0.0)],
+          ).createShader(Rect.fromCircle(center: center, radius: r)),
+      );
+    }
+
+    blob(Offset(w * (0.15 + 0.14 * sin(k)), h * (0.08 + 0.05 * cos(k))), w * 0.85, a, 0.22);
+    blob(Offset(w * (0.90 + 0.10 * cos(k + 1)), h * (0.40 + 0.08 * sin(k + 2))), w * 0.95, b, 0.36);
+    blob(Offset(w * (0.30 + 0.20 * cos(k + 3)), h * (0.85 + 0.06 * sin(k))), w * 0.95, c, 0.30);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TintAuroraPainter oldDelegate) => false;
+}
+
+// ---- Apparition douce (fondu + glissement), avec délai ----
+class _Reveal extends StatefulWidget {
+  final Widget child;
+  final int delayMs;
+  final double dy;
+  const _Reveal({super.key, required this.child, this.delayMs = 0, this.dy = 24});
+
+  @override
+  State<_Reveal> createState() => _RevealState();
+}
+
+class _RevealState extends State<_Reveal> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      child: widget.child,
+      builder: (context, ch) {
+        final double p = Curves.easeOutCubic.transform(_ctrl.value);
+        return Opacity(
+          opacity: p,
+          child: Transform.translate(offset: Offset(0, (1 - p) * widget.dy), child: ch),
+        );
+      },
+    );
+  }
+}
+
+// ---- Texte avec reflet d'or qui glisse ----
+class _GoldShimmerText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final TextAlign? align;
+  const _GoldShimmerText(this.text, {required this.style, this.align});
+
+  @override
+  State<_GoldShimmerText> createState() => _GoldShimmerTextState();
+}
+
+class _GoldShimmerTextState extends State<_GoldShimmerText> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 5))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) {
+        final double s = _ctrl.value * 1.7 - 0.35;
+        double st(double v) => v.clamp(0.0, 1.0).toDouble();
+        return ShaderMask(
+          shaderCallback: (Rect r) => LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: const [
+              Color(0xFFD4AF37),
+              Color(0xFFF3E5AB),
+              Color(0xFFFFFBEA),
+              Color(0xFFF3E5AB),
+              Color(0xFFD4AF37),
+            ],
+            stops: [st(s - 0.3), st(s - 0.12), st(s), st(s + 0.12), st(s + 0.3)],
+          ).createShader(r),
+          child: Text(
+            widget.text,
+            textAlign: widget.align,
+            style: widget.style.copyWith(color: Colors.white),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---- Anneaux qui pulsent (écran d'analyse) ----
+class _PulseRings extends StatefulWidget {
+  final double size;
+  final IconData icon;
+  const _PulseRings({this.size = 130, this.icon = Icons.travel_explore_rounded});
+
+  @override
+  State<_PulseRings> createState() => _PulseRingsState();
+}
+
+class _PulseRingsState extends State<_PulseRings> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedBuilder(
+            animation: _ctrl,
+            builder: (context, _) => CustomPaint(
+              size: Size(widget.size, widget.size),
+              painter: _RingsPainter(_ctrl.value),
+            ),
+          ),
+          Container(
+            width: widget.size * 0.42,
+            height: widget.size * 0.42,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _kGold.withOpacity(0.12),
+              border: Border.all(color: _kGold.withOpacity(0.5), width: 0.8),
+            ),
+            child: Icon(widget.icon, color: _kChampagne, size: widget.size * 0.2),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RingsPainter extends CustomPainter {
+  final double t;
+  _RingsPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset c = size.center(Offset.zero);
+    for (int k = 0; k < 3; k++) {
+      final double p = (t + k / 3) % 1.0;
+      canvas.drawCircle(
+        c,
+        size.width / 2 * p,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4
+          ..color = _kGold.withOpacity((1 - p) * 0.55),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RingsPainter oldDelegate) => oldDelegate.t != t;
+}
+
+// ---- Cœur flottant (état vide des favoris) ----
+class _FloatingHeart extends StatefulWidget {
+  const _FloatingHeart();
+
+  @override
+  State<_FloatingHeart> createState() => _FloatingHeartState();
+}
+
+class _FloatingHeartState extends State<_FloatingHeart> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) {
+        final double t = Curves.easeInOut.transform(_ctrl.value);
+        return Transform.translate(
+          offset: Offset(0, -10 * t),
+          child: Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [_kGold.withOpacity(0.22), _kGold.withOpacity(0.04)],
+              ),
+              border: Border.all(color: _kGold.withOpacity(0.4), width: 0.8),
+              boxShadow: [
+                BoxShadow(color: _kGold.withOpacity(0.16 + 0.22 * t), blurRadius: 30 + 22 * t),
+              ],
+            ),
+            child: const Icon(Icons.favorite_border_rounded, color: _kGold, size: 40),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---- Carte d'un mois (dépliable) ----
+class _MonthCard extends StatefulWidget {
+  final Map<String, dynamic> m;
+  const _MonthCard({required this.m});
+
+  @override
+  State<_MonthCard> createState() => _MonthCardState();
+}
+
+class _MonthCardState extends State<_MonthCard> {
+  bool _open = false;
+
+  IconData _iconeSaison(String s) {
+    switch (s) {
+      case 'Hiver':
+        return Icons.ac_unit_rounded;
+      case 'Printemps':
+        return Icons.local_florist_rounded;
+      case 'Été':
+        return Icons.wb_sunny_rounded;
+      default:
+        return Icons.eco_rounded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool bon = widget.m['estBon'] == true;
+    final Color accent = bon ? const Color(0xFF34D399) : const Color(0xFFF87171);
+    final String saison = widget.m['saison'].toString();
+
+    return _PressScale(
+      scale: 0.985,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _open = !_open);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [accent.withOpacity(0.11), accent.withOpacity(0.02)],
+          ),
+          border: Border.all(color: accent.withOpacity(0.28), width: 0.8),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(21),
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 3,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [accent, accent.withOpacity(0.1)],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: accent.withOpacity(0.14),
+                            border: Border.all(color: accent.withOpacity(0.35), width: 0.8),
+                          ),
+                          child: Icon(_iconeSaison(saison), color: accent, size: 17),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.m['nom'].toString(),
+                                style: GoogleFonts.cinzel(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                saison.toUpperCase(),
+                                style: GoogleFonts.montserrat(
+                                  color: Colors.white54,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: accent.withOpacity(0.16),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                bon ? Icons.check_circle_rounded : Icons.do_not_disturb_on_rounded,
+                                size: 12,
+                                color: accent,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                bon ? 'IDÉAL' : 'À ÉVITER',
+                                style: GoogleFonts.montserrat(
+                                  color: accent,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 380),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.topCenter,
+                      child: Text(
+                        widget.m['raison'].toString(),
+                        maxLines: _open ? 40 : 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.montserrat(
+                          color: Colors.white.withOpacity(0.72),
+                          fontSize: 12.5,
+                          height: 1.55,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text(
+                          _open ? 'RÉDUIRE' : 'LIRE LA SUITE',
+                          style: GoogleFonts.montserrat(
+                            color: accent,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        AnimatedRotation(
+                          turns: _open ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 380),
+                          curve: Curves.easeOutCubic,
+                          child: Icon(Icons.keyboard_arrow_down_rounded, color: accent, size: 18),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+//  ROULETTE DES VILLES — plein écran immersif : photo floutée en fond, cadran
+//  doré qui tourne, ralentissement progressif, explosion d'étincelles.
+// ===========================================================================
 class _RouletteDialog extends StatefulWidget {
   final List<Map<String, String>> villes;
   final BuildContext parentContext;
@@ -588,53 +1503,71 @@ class _RouletteDialog extends StatefulWidget {
   State<_RouletteDialog> createState() => _RouletteDialogState();
 }
 
-class _RouletteDialogState extends State<_RouletteDialog> {
+class _RouletteDialogState extends State<_RouletteDialog> with TickerProviderStateMixin {
   int _currentIndex = 0;
-  Timer? _timer;
   bool _isFinished = false;
   String _selectedVille = '';
+  int _token = 0;
+
+  late final AnimationController _ringCtrl;
+  late final AnimationController _burstCtrl;
+  late final AnimationController _pulseCtrl;
 
   @override
   void initState() {
     super.initState();
-    _lancerAnimation();
-  }
-
-  void _lancerAnimation() {
-    final random = Random();
-    int steps = 0;
-    _timer = Timer.periodic(const Duration(milliseconds: 70), (timer) {
-      if (!mounted) return;
-      setState(() {
-        _currentIndex = random.nextInt(widget.villes.length);
-        steps++;
-      });
-
-      if (steps >= 20) {
-        timer.cancel();
-        if (mounted) {
-          setState(() {
-            _isFinished = true;
-            _selectedVille = widget.villes[_currentIndex]['nom']!;
-          });
-        }
-      }
-    });
-  }
-
-  void _relancerRoulette() {
-    _timer?.cancel();
-    setState(() {
-      _isFinished = false;
-      _selectedVille = '';
-    });
-    _lancerAnimation();
+    _ringCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))..repeat();
+    _burstCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500));
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))
+      ..repeat(reverse: true);
+    _lancer();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _token++;
+    _ringCtrl.dispose();
+    _burstCtrl.dispose();
+    _pulseCtrl.dispose();
     super.dispose();
+  }
+
+  // Tirage : les images défilent vite puis ralentissent jusqu'à l'arrêt.
+  Future<void> _lancer() async {
+    final int mine = ++_token;
+    final Random rnd = Random();
+    final int n = widget.villes.length;
+    final int total = 24 + rnd.nextInt(6);
+    int last = _currentIndex;
+
+    if (mounted) {
+      setState(() {
+        _isFinished = false;
+        _selectedVille = '';
+      });
+    }
+    _burstCtrl.reset();
+
+    for (int i = 0; i < total; i++) {
+      if (!mounted || mine != _token) return;
+      int next;
+      do {
+        next = rnd.nextInt(n);
+      } while (next == last && n > 1);
+      last = next;
+      setState(() => _currentIndex = next);
+      HapticFeedback.selectionClick();
+      final double t = i / (total - 1);
+      await Future.delayed(Duration(milliseconds: (55 + 330 * pow(t, 2.6)).round()));
+    }
+
+    if (!mounted || mine != _token) return;
+    setState(() {
+      _isFinished = true;
+      _selectedVille = widget.villes[_currentIndex]['nom']!;
+    });
+    HapticFeedback.heavyImpact();
+    _burstCtrl.forward(from: 0);
   }
 
   void _naviguerVersVilleSelectionnee() {
@@ -673,143 +1606,435 @@ class _RouletteDialogState extends State<_RouletteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final currentVille = widget.villes[_currentIndex];
+    final int n = widget.villes.length;
+    final Map<String, String> ville = widget.villes[_currentIndex];
+    final Map<String, String> prev = widget.villes[(_currentIndex - 1 + n) % n];
+    final Map<String, String> next = widget.villes[(_currentIndex + 1) % n];
+    final Size size = MediaQuery.of(context).size;
+    final double dial = min(min(size.width * 0.64, size.height * 0.32), 280.0);
+    final double box = dial + 56;
 
-    return AlertDialog(
-      backgroundColor: const Color(0xFF0F172A),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-        side: BorderSide(color: Colors.white.withOpacity(0.1)),
-      ),
-      content: Stack(
-        clipBehavior: Clip.none,
+    TextStyle ghost = GoogleFonts.cinzel(
+      color: Colors.white.withOpacity(0.2),
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 3,
+    );
+
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.casino_rounded, color: Color(0xFF8B5CF6), size: 42),
-              const SizedBox(height: 14),
-              const Text(
-                'Roulette des Villes',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _isFinished ? '✨ Ville gagnante trouvée !' : 'Tirage au sort en cours...',
-                style: TextStyle(color: Colors.grey[400], fontSize: 13),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
+          // ---- Fond : photo de la ville courante, floutée ----
+          Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 420),
+              child: KeyedSubtree(
+                key: ValueKey<String>(ville['image']!),
+                child: Transform.scale(
+                  scale: 1.25,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                    child: _photo(ville['image']!, width: double.infinity, height: double.infinity),
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.asset(
-                        currentVille['image']!,
-                        width: 130,
-                        height: 130,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: 130,
-                            height: 130,
-                            color: Colors.grey[850],
-                            child: const Icon(Icons.location_city, color: Colors.white54, size: 40),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      currentVille['nom']!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.62),
+                    Colors.black.withOpacity(0.78),
+                    Colors.black.withOpacity(0.92),
                   ],
                 ),
               ),
-              const SizedBox(height: 22),
-              if (_isFinished)
-                Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF8B5CF6),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          elevation: 0,
-                        ),
-                        onPressed: _naviguerVersVilleSelectionnee,
-                        child: const Text(
-                          'Découvrir cette ville',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 10, 16, 0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'ROULETTE DES VILLES',
+                        style: GoogleFonts.montserrat(
+                          color: _kChampagne.withOpacity(0.9),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 3.4,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: _relancerRoulette,
-                        icon: const Icon(Icons.refresh_rounded, size: 16),
-                        label: const Text(
-                          'Tirer une autre ville',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      _PressScale(
+                        onTap: () => Navigator.pop(context),
+                        child: _glassBox(
+                          radius: 30,
+                          padding: const EdgeInsets.all(10),
+                          child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18),
                         ),
                       ),
-                    ),
-                  ],
-                )
-              else
-                const SizedBox(
-                  height: 24,
+                    ],
+                  ),
+                ),
+
+                Expanded(
                   child: Center(
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(color: Color(0xFF8B5CF6), strokeWidth: 2),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ---- Cadran ----
+                        SizedBox(
+                          width: box,
+                          height: box,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            clipBehavior: Clip.none,
+                            children: [
+                              AnimatedBuilder(
+                                animation: _pulseCtrl,
+                                builder: (context, _) {
+                                  final double g = _pulseCtrl.value;
+                                  return Container(
+                                    width: dial,
+                                    height: dial,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _kGold.withOpacity(_isFinished ? 0.34 + 0.24 * g : 0.10 + 0.10 * g),
+                                          blurRadius: 44 + 30 * g,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                              ClipOval(
+                                child: SizedBox(
+                                  width: dial - 28,
+                                  height: dial - 28,
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 170),
+                                    transitionBuilder: (child, anim) => FadeTransition(
+                                      opacity: anim,
+                                      child: ScaleTransition(
+                                        scale: Tween<double>(begin: 0.92, end: 1.0).animate(anim),
+                                        child: child,
+                                      ),
+                                    ),
+                                    child: KeyedSubtree(
+                                      key: ValueKey<int>(_currentIndex),
+                                      child: _photo(
+                                        ville['image']!,
+                                        width: dial - 28,
+                                        height: dial - 28,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              IgnorePointer(
+                                child: AnimatedBuilder(
+                                  animation: _ringCtrl,
+                                  builder: (context, _) => CustomPaint(
+                                    size: Size(box, box),
+                                    painter: _DialPainter(rotation: _ringCtrl.value, finished: _isFinished),
+                                  ),
+                                ),
+                              ),
+                              IgnorePointer(
+                                child: AnimatedBuilder(
+                                  animation: _burstCtrl,
+                                  builder: (context, _) => CustomPaint(
+                                    size: Size(box, box),
+                                    painter: _BurstPainter(_burstCtrl.value),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // ---- Nom de la ville (effet « rouleau ») ----
+                        Text(prev['nom']!.toUpperCase(), style: ghost),
+                        SizedBox(
+                          height: 58,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 220),
+                            transitionBuilder: (child, anim) => FadeTransition(
+                              opacity: anim,
+                              child: SlideTransition(
+                                position: Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero).animate(anim),
+                                child: child,
+                              ),
+                            ),
+                            child: _isFinished
+                                ? ShaderMask(
+                              key: ValueKey<String>('fin-${ville['nom']}'),
+                              shaderCallback: (r) => const LinearGradient(
+                                colors: [Color(0xFFD4AF37), Color(0xFFFFFBEA), Color(0xFFD4AF37)],
+                              ).createShader(r),
+                              child: Text(
+                                ville['nom']!,
+                                style: GoogleFonts.cinzel(
+                                  color: Colors.white,
+                                  fontSize: 38,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 3,
+                                ),
+                              ),
+                            )
+                                : Text(
+                              ville['nom']!,
+                              key: ValueKey<String>('run-${ville['nom']}'),
+                              style: GoogleFonts.cinzel(
+                                color: Colors.white,
+                                fontSize: 34,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 3,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Text(next['nom']!.toUpperCase(), style: ghost),
+                        const SizedBox(height: 14),
+
+                        // ---- Statut / description ----
+                        SizedBox(
+                          height: 64,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 450),
+                            child: _isFinished
+                                ? Padding(
+                              key: const ValueKey<String>('desc'),
+                              padding: const EdgeInsets.symmetric(horizontal: 34),
+                              child: Text(
+                                ville['description']!,
+                                textAlign: TextAlign.center,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.montserrat(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 12.5,
+                                  height: 1.55,
+                                ),
+                              ),
+                            )
+                                : AnimatedBuilder(
+                              key: const ValueKey<String>('status'),
+                              animation: _pulseCtrl,
+                              builder: (context, _) => Center(
+                                child: Opacity(
+                                  opacity: 0.45 + 0.55 * _pulseCtrl.value,
+                                  child: Text(
+                                    'TIRAGE EN COURS',
+                                    style: GoogleFonts.montserrat(
+                                      color: _kChampagne,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-            ],
-          ),
-          Positioned(
-            right: -10,
-            top: -10,
-            child: IconButton(
-              icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
-              onPressed: () => Navigator.pop(context),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.white.withOpacity(0.08),
-              ),
+
+                // ---- Actions ----
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 22),
+                  child: AnimatedOpacity(
+                    opacity: _isFinished ? 1 : 0,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeOut,
+                    child: IgnorePointer(
+                      ignoring: !_isFinished,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _PressScale(
+                            onTap: _naviguerVersVilleSelectionnee,
+                            child: Container(
+                              height: 56,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(28),
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFFD4AF37), Color(0xFFF3E5AB), Color(0xFFD4AF37)],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _kGold.withOpacity(0.4),
+                                    blurRadius: 26,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'DÉCOUVRIR ${(_selectedVille.isEmpty ? ville['nom']! : _selectedVille).toUpperCase()}',
+                                    style: GoogleFonts.montserrat(
+                                      color: Colors.black87,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 2.2,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Icon(Icons.arrow_forward_rounded, color: Colors.black87, size: 18),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _PressScale(
+                            onTap: _lancer,
+                            child: _glassBox(
+                              radius: 28,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.refresh_rounded, color: Colors.white70, size: 16),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'TIRER À NOUVEAU',
+                                    style: GoogleFonts.montserrat(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 2.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+}
+
+// ---- Cadran : graduations dorées, tête lumineuse qui tourne ----
+class _DialPainter extends CustomPainter {
+  final double rotation;
+  final bool finished;
+  _DialPainter({required this.rotation, required this.finished});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset c = size.center(Offset.zero);
+    final double r = size.width / 2 - 16;
+    const int n = 72;
+
+    for (int i = 0; i < n; i++) {
+      final double a = i * 2 * pi / n - pi / 2;
+      final bool major = i % 6 == 0;
+      double glow;
+      if (finished) {
+        glow = 1.0;
+      } else {
+        double d = (i / n - rotation) % 1.0;
+        if (d < 0) d += 1.0;
+        glow = pow(1 - d, 5).toDouble();
+      }
+      final double len = major ? 13 : 7;
+      final Paint p = Paint()
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = major ? 2.2 : 1.3
+        ..color = Color.lerp(Colors.white.withOpacity(major ? 0.24 : 0.12), _kGold, glow)!;
+      final Offset dir = Offset(cos(a), sin(a));
+      canvas.drawLine(c + dir * r, c + dir * (r - len), p);
+    }
+
+    canvas.drawCircle(
+      c,
+      r - 22,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8
+        ..color = _kGold.withOpacity(finished ? 0.8 : 0.3),
+    );
+
+    // Repère triangulaire en haut
+    final Path tri = Path()
+      ..moveTo(c.dx - 6, c.dy - r - 13)
+      ..lineTo(c.dx + 6, c.dy - r - 13)
+      ..lineTo(c.dx, c.dy - r - 3)
+      ..close();
+    canvas.drawPath(tri, Paint()..color = _kChampagne);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DialPainter old) =>
+      old.rotation != rotation || old.finished != finished;
+}
+
+// ---- Étincelles dorées à l'arrêt de la roulette ----
+class _BurstPainter extends CustomPainter {
+  final double t;
+  _BurstPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (t <= 0 || t >= 1) return;
+    final Offset c = size.center(Offset.zero);
+    final double r = size.width / 2 - 16;
+    final double e = Curves.easeOutCubic.transform(t);
+    final double fade = (1 - t).clamp(0.0, 1.0).toDouble();
+
+    for (int i = 0; i < 36; i++) {
+      final double a = i * 2 * pi / 36 + (i % 3) * 0.12;
+      final double spread = 0.85 + 0.35 * ((i * 7) % 5) / 5;
+      final double dist = r * (0.7 + 0.8 * e) * spread;
+      final Offset pos = c + Offset(cos(a), sin(a)) * dist;
+      canvas.drawCircle(
+        pos,
+        3.2 * (1 - t) + 0.8,
+        Paint()..color = (i.isEven ? _kGold : _kChampagne).withOpacity(fade),
+      );
+    }
+
+    canvas.drawCircle(
+      c,
+      r * (0.8 + 0.7 * e),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4 * (1 - t)
+        ..color = _kChampagne.withOpacity(fade * 0.8),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _BurstPainter old) => old.t != t;
 }
 
 // --- WIDGET DU GÉNÉRATEUR ---
@@ -868,7 +2093,7 @@ class _GenerateurWidgetState extends State<_GenerateurWidget> {
             " [${random.nextInt(99)}%]";
       });
 
-      if (compteurVitesse >= 20) {
+      if (compteurVitesse >= 32) {
         timer.cancel();
         if (mounted) {
           setState(() {
@@ -959,273 +2184,591 @@ class _GenerateurWidgetState extends State<_GenerateurWidget> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final listeMois = _getMoisPourVille(villeOngletActif);
+  Widget _sectionLabel(String t) {
+    return Row(
+      children: [
+        Text(
+          t,
+          style: GoogleFonts.montserrat(
+            color: Colors.white54,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 3,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Container(
+            height: 0.8,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_kGold.withOpacity(0.5), _kGold.withOpacity(0.0)],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-    return SingleChildScrollView(
-      controller: widget.scrollController,
-      physics: const BouncingScrollPhysics(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+  Widget _chip(String label, Color col, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: col.withOpacity(0.16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: col.withOpacity(0.4), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: col),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: GoogleFonts.montserrat(
+              color: col,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- Tuile photo d'une ville (sélection animée) ----
+  Widget _villeCard(String ville) {
+    final bool sel = villeSelectionnee == ville;
+    return _PressScale(
+      scale: 0.95,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() {
+          if (sel) {
+            villeSelectionnee = null;
+            villeOngletActif = '';
+            estGenere = false;
+          } else {
+            villeSelectionnee = ville;
+            villeOngletActif = ville;
+            estGenere = false;
+          }
+        });
+      },
+      child: AnimatedScale(
+        scale: sel ? 1.05 : 1.0,
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeOutBack,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          width: 108,
+          height: 132,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: sel ? _kGold : Colors.white.withOpacity(0.12),
+              width: sel ? 1.6 : 0.8,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: sel ? _kGold.withOpacity(0.38) : Colors.black.withOpacity(0.45),
+                blurRadius: sel ? 24 : 12,
+                offset: const Offset(0, 8),
               ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: const [
-                Icon(Icons.bolt_rounded, color: Color(0xFF60A5FA), size: 26),
-                SizedBox(width: 8),
-                Text(
-                  'Générateur de Visite 🇧🇪',
-                  style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.bold),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                AnimatedScale(
+                  scale: sel ? 1.12 : 1.0,
+                  duration: const Duration(milliseconds: 700),
+                  curve: Curves.easeOutCubic,
+                  child: _photo(_kVilleImages[ville] ?? ''),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Sélectionnez une ville pour obtenir des conseils adaptés.',
-              style: TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w500, height: 1.3),
-            ),
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(14.0),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withOpacity(0.12),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.35)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.cloudy_snowing, color: Color(0xFFFBBF24), size: 26),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Rappel Météo Important 🌧️',
-                          style: TextStyle(color: Color(0xFFFBBF24), fontSize: 13, fontWeight: FontWeight.bold),
-                        ),
-                        SizedBox(height: 3),
-                        Text(
-                          'Même si la période est recommandée, vérifiez toujours la météo avant de partir !',
-                          style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35),
-                        ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withOpacity(sel ? 0.05 : 0.25),
+                        Colors.black.withOpacity(0.85),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Sélection de la ville : vous choisissez une ville',
-              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: toutesLesVilles.map((ville) {
-                final isSelected = (villeSelectionnee == ville);
-                return FilterChip(
-                  label: Text(
+                ),
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 12,
+                  child: Text(
                     ville,
-                    style: TextStyle(
-                      color: isSelected ? Colors.black : Colors.white,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.cinzel(
+                      color: sel ? _kChampagne : Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  selected: isSelected,
-                  selectedColor: const Color(0xFFFBBF24),
-                  backgroundColor: const Color(0xFF1E293B),
-                  checkmarkColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    side: BorderSide(
-                      color: isSelected ? const Color(0xFFFBBF24) : Colors.white24,
-                    ),
-                  ),
-                  onSelected: (bool selected) {
-                    setState(() {
-                      if (isSelected) {
-                        villeSelectionnee = null;
-                        villeOngletActif = '';
-                        estGenere = false;
-                      } else {
-                        villeSelectionnee = ville;
-                        villeOngletActif = ville;
-                        estGenere = false;
-                      }
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: (estEnGenerationVitesse || villeSelectionnee == null)
-                    ? null
-                    : _lancerGenerationHauteVitesse,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B82F6),
-                  disabledBackgroundColor: Colors.white10,
-                  foregroundColor: Colors.white,
-                  disabledForegroundColor: Colors.white30,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
                 ),
-                icon: estEnGenerationVitesse
-                    ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                )
-                    : const Icon(Icons.flash_on_rounded, size: 20),
-                label: Text(
-                  villeSelectionnee == null
-                      ? 'SÉLECTIONNEZ UNE VILLE'
-                      : (estEnGenerationVitesse ? 'ANALYSE EN COURS...' : 'LANCER LA GÉNÉRATION RAPIDE'),
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: AnimatedScale(
+                    scale: sel ? 1 : 0,
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOutBack,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: const BoxDecoration(shape: BoxShape.circle, color: _kGold),
+                      child: const Icon(Icons.check_rounded, size: 14, color: Colors.black87),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCta() {
+    final bool enabled = villeSelectionnee != null && !estEnGenerationVitesse;
+    final String label = villeSelectionnee == null
+        ? 'CHOISISSEZ UNE VILLE'
+        : (estEnGenerationVitesse ? 'ANALYSE EN COURS' : 'GÉNÉRER MON PLANNING');
+    return _PressScale(
+      onTap: () {
+        if (enabled) {
+          HapticFeedback.mediumImpact();
+          _lancerGenerationHauteVitesse();
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+        height: 56,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          gradient: enabled
+              ? const LinearGradient(colors: [Color(0xFFD4AF37), Color(0xFFF3E5AB), Color(0xFFD4AF37)])
+              : LinearGradient(colors: [Colors.white.withOpacity(0.07), Colors.white.withOpacity(0.04)]),
+          border: Border.all(
+            color: enabled ? Colors.transparent : Colors.white.withOpacity(0.1),
+            width: 0.8,
+          ),
+          boxShadow: enabled
+              ? [BoxShadow(color: _kGold.withOpacity(0.38), blurRadius: 26, offset: const Offset(0, 8))]
+              : const [],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (estEnGenerationVitesse)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+              )
+            else
+              Icon(
+                Icons.auto_awesome_rounded,
+                size: 18,
+                color: enabled ? Colors.black87 : Colors.white30,
+              ),
+            const SizedBox(width: 10),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Text(
+                label,
+                key: ValueKey<String>(label),
+                style: GoogleFonts.montserrat(
+                  color: enabled ? Colors.black87 : Colors.white38,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2.2,
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            if (estEnGenerationVitesse)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40.0),
-                child: Center(
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Écran d'analyse : anneaux + barre de progression dorée ----
+  Widget _buildScanner() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 34),
+      child: Center(
+        child: Column(
+          children: [
+            const _PulseRings(size: 140),
+            const SizedBox(height: 22),
+            Text(
+              affichageVitesseTexte,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.jetBrainsMono(
+                color: _kChampagne,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: 230,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: (compteurVitesse / 32).clamp(0.0, 1.0).toDouble()),
+                duration: const Duration(milliseconds: 160),
+                builder: (context, v, _) => ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: v,
+                    minHeight: 3,
+                    backgroundColor: Colors.white.withOpacity(0.08),
+                    valueColor: const AlwaysStoppedAnimation<Color>(_kGold),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Résultats : bannière photo, frise annuelle, cartes des mois ----
+  Widget _buildResultats(List<Map<String, dynamic>> mois) {
+    final int bons = mois.where((m) => m['estBon'] == true).length;
+    final int mauvais = mois.length - bons;
+    const Color vert = Color(0xFF34D399);
+    const Color rouge = Color(0xFFF87171);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 172,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: _kGold.withOpacity(0.35), width: 0.8),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 22, offset: const Offset(0, 10)),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(27),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 1.18, end: 1.0),
+                  duration: const Duration(milliseconds: 1800),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, s, child) => Transform.scale(scale: s, child: child),
+                  child: _photo(_kVilleImages[villeOngletActif] ?? ''),
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black.withOpacity(0.1), Colors.black.withOpacity(0.88)],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(18),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.speed_rounded, size: 50, color: Color(0xFF60A5FA)),
-                      const SizedBox(height: 14),
                       Text(
-                        affichageVitesseTexte,
-                        style: const TextStyle(
-                          color: Color(0xFF60A5FA),
-                          fontFamily: 'monospace',
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
+                        'ANALYSE ANNUELLE',
+                        style: GoogleFonts.montserrat(
+                          color: _kChampagne.withOpacity(0.85),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 3.4,
                         ),
+                      ),
+                      const SizedBox(height: 4),
+                      _GoldShimmerText(
+                        villeOngletActif,
+                        style: GoogleFonts.cinzel(
+                          fontSize: 31,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          _chip('$bons MOIS IDÉAUX', vert, Icons.check_circle_rounded),
+                          _chip('$mauvais À ÉVITER', rouge, Icons.do_not_disturb_on_rounded),
+                        ],
                       ),
                     ],
                   ),
                 ),
-              )
-            else if (estGenere && villeSelectionnee != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Frise des 12 mois
+        _glassBox(
+          radius: 22,
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(mois.length, (i) {
+              final bool bon = mois[i]['estBon'] == true;
+              final Color col = bon ? vert : rouge;
+              final String lettre = mois[i]['nom'].toString().substring(0, 1).toUpperCase();
+              return Expanded(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: 1),
+                  duration: Duration(milliseconds: 600 + i * 70),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, p, _) => SizedBox(
+                    height: 66,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        const Icon(Icons.location_city_rounded, color: Color(0xFFFBBF24), size: 18),
-                        const SizedBox(width: 8),
+                        Container(
+                          width: 9,
+                          height: (bon ? 44.0 : 18.0) * p,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(6),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [col, col.withOpacity(0.35)],
+                            ),
+                            boxShadow: [BoxShadow(color: col.withOpacity(0.35 * p), blurRadius: 8)],
+                          ),
+                        ),
+                        const SizedBox(height: 6),
                         Text(
-                          'Analyse annuelle pour $villeOngletActif',
-                          style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                          lettre,
+                          style: GoogleFonts.montserrat(
+                            color: Colors.white54,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  ...listeMois.map((m) {
-                    final bool estBon = m['estBon'];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12.0),
-                      padding: const EdgeInsets.all(14.0),
+                ),
+              );
+            }),
+          ),
+        ),
+        const SizedBox(height: 22),
+        _sectionLabel('MOIS PAR MOIS'),
+        const SizedBox(height: 14),
+        ...List.generate(mois.length, (i) {
+          return _Reveal(
+            delayMs: 150 + i * 70,
+            dy: 20,
+            child: _MonthCard(m: mois[i]),
+          );
+        }),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final listeMois = _getMoisPourVille(villeOngletActif);
+    final double bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(34)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF07070D),
+          border: Border(top: BorderSide(color: _kGold.withOpacity(0.4), width: 0.8)),
+        ),
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: _AuroraBackdrop(
+                a: Color(0xFF3B82F6),
+                b: Color(0xFF3B2A7A),
+                c: Color(0xFFD4AF37),
+              ),
+            ),
+            SingleChildScrollView(
+              controller: widget.scrollController,
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 30 + bottomInset),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
                       decoration: BoxDecoration(
-                        color: estBon
-                            ? const Color(0xFF10B981).withOpacity(0.08)
-                            : const Color(0xFFEF4444).withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: estBon
-                              ? const Color(0xFF10B981).withOpacity(0.25)
-                              : const Color(0xFFEF4444).withOpacity(0.25),
-                        ),
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    m['nom'],
-                                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '(${m['saison']})',
-                                    style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: estBon
-                                      ? const Color(0xFF10B981).withOpacity(0.2)
-                                      : const Color(0xFFEF4444).withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      estBon ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                                      size: 13,
-                                      color: estBon ? const Color(0xFF34D399) : const Color(0xFFF87171),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      estBon ? 'BON' : 'MAUVAIS',
-                                      style: TextStyle(
-                                        color: estBon ? const Color(0xFF34D399) : const Color(0xFFF87171),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  // ---- En-tête ----
+                  _Reveal(
+                    delayMs: 80,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Planification',
+                          style: GoogleFonts.montserrat(
+                            color: const Color(0xFF60A5FA),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 4,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            m['raison'],
-                            style: TextStyle(color: Colors.grey[300], fontSize: 13, height: 1.4),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Quand visiter',
+                          style: GoogleFonts.cinzel(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            height: 1.1,
+                          ),
+                        ),
+                        _GoldShimmerText(
+                          'la Belgique ?',
+                          style: GoogleFonts.cinzel(
+                            fontSize: 34,
+                            fontWeight: FontWeight.bold,
+                            height: 1.15,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Choisissez une ville : nous analysons les 12 mois de l\'année pour vous.',
+                          style: GoogleFonts.montserrat(
+                            color: Colors.white.withOpacity(0.6),
+                            fontSize: 12.5,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // ---- Rappel météo ----
+                  _Reveal(
+                    delayMs: 180,
+                    child: _glassBox(
+                      radius: 20,
+                      tint: const Color(0xFFF59E0B),
+                      tintOpacity: 0.12,
+                      border: const Color(0xFFF59E0B).withOpacity(0.35),
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFFFBBF24).withOpacity(0.15),
+                              border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.4), width: 0.8),
+                            ),
+                            child: const Icon(Icons.cloudy_snowing, color: Color(0xFFFBBF24), size: 19),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'RAPPEL MÉTÉO',
+                                  style: GoogleFonts.montserrat(
+                                    color: const Color(0xFFFBBF24),
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 2.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Même si la période est recommandée, vérifiez toujours la météo avant de partir.',
+                                  style: GoogleFonts.montserrat(
+                                    color: Colors.white70,
+                                    fontSize: 11.5,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                    );
-                  }).toList(),
-                  const SizedBox(height: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+
+                  // ---- Sélection de la ville ----
+                  _Reveal(delayMs: 280, child: _sectionLabel('VOTRE VILLE')),
+                  const SizedBox(height: 6),
+                  _Reveal(
+                    delayMs: 340,
+                    child: SizedBox(
+                      height: 158,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        clipBehavior: Clip.none,
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                        itemCount: toutesLesVilles.length,
+                        separatorBuilder: (context, i) => const SizedBox(width: 12),
+                        itemBuilder: (context, i) => _villeCard(toutesLesVilles[i]),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // ---- Bouton principal ----
+                  _Reveal(delayMs: 420, child: _buildCta()),
+                  const SizedBox(height: 26),
+
+                  // ---- Analyse / résultats ----
+                  if (estEnGenerationVitesse)
+                    _Reveal(key: const ValueKey<String>('scan'), child: _buildScanner())
+                  else if (estGenere && villeSelectionnee != null)
+                    _Reveal(
+                      key: ValueKey<String>('res-$villeOngletActif'),
+                      child: _buildResultats(listeMois),
+                    ),
                 ],
               ),
+            ),
           ],
         ),
       ),
@@ -1233,7 +2776,7 @@ class _GenerateurWidgetState extends State<_GenerateurWidget> {
   }
 }
 
-// --- PAGE DES FAVORIS SANS AUCUNE ANIMATION (OUVERTURE/FERMETURE INSTANTANÉE) ---
+// --- PAGE DES FAVORIS 2026 : aurore, bannières photo, dépliage animé ---
 class FavorisFrPage extends StatefulWidget {
   const FavorisFrPage({super.key});
 
@@ -1499,6 +3042,482 @@ class _FavorisFrPageState extends State<FavorisFrPage> {
     });
   }
 
+  // -------------------------------------------------------------------------
+  //  Aides de lecture des favoris
+  // -------------------------------------------------------------------------
+  List<String> _idsPour(String dossier) {
+    if (dossier == 'Bruxelles') return _favorisBruxellesIds;
+    if (dossier == 'Gand') return _favorisGandIds;
+    if (dossier == 'Bruges') return _favorisBrugesIds;
+    if (dossier == 'Anvers') return _favorisAnversIds;
+    return _favorisLiegeIds;
+  }
+
+  List<Map<String, dynamic>> _lieuxPour(String dossier, String quartier) {
+    final List<Map<String, dynamic>> res = [];
+    for (final String id in _idsPour(dossier)) {
+      final Map<String, dynamic>? base = _tousLesLieux[id];
+      if (base == null) continue;
+      if (base['dossier'] == dossier && base['quartier'] == quartier) {
+        final Map<String, dynamic> item = Map<String, dynamic>.from(base);
+        item['id'] = id;
+        res.add(item);
+      }
+    }
+    return res;
+  }
+
+  int _compteDossier(String dossier) {
+    int c = 0;
+    for (final String id in _idsPour(dossier)) {
+      final Map<String, dynamic>? base = _tousLesLieux[id];
+      if (base != null && base['dossier'] == dossier) c++;
+    }
+    return c;
+  }
+
+  Widget _glassPill({required IconData icon, required String label, Color? color}) {
+    final Color col = color ?? Colors.white70;
+    return _glassBox(
+      radius: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: col, size: 14),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: GoogleFonts.montserrat(
+              color: col,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 2.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statCell(int value, String label) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TweenAnimationBuilder<int>(
+            tween: IntTween(begin: 0, end: value),
+            duration: const Duration(milliseconds: 1100),
+            curve: Curves.easeOutCubic,
+            builder: (context, v, _) => Text(
+              '$v',
+              style: GoogleFonts.cinzel(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: _kChampagne,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: GoogleFonts.montserrat(
+              fontSize: 9.5,
+              color: Colors.white54,
+              letterSpacing: 2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStats(int total, int villesActives) {
+    return _glassBox(
+      radius: 26,
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Row(
+        children: [
+          _statCell(total, total > 1 ? 'LIEUX' : 'LIEU'),
+          Container(
+            width: 0.8,
+            height: 34,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [_kGold.withOpacity(0.0), _kGold.withOpacity(0.6), _kGold.withOpacity(0.0)],
+              ),
+            ),
+          ),
+          _statCell(villesActives, villesActives > 1 ? 'VILLES' : 'VILLE'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVide() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 30),
+      child: _glassBox(
+        radius: 30,
+        padding: const EdgeInsets.fromLTRB(28, 38, 28, 34),
+        child: Column(
+          children: [
+            const _FloatingHeart(),
+            const SizedBox(height: 26),
+            Text(
+              'Aucun favori',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.cinzel(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Touchez le cœur sur les lieux qui vous plaisent dans les pages des villes : ils apparaîtront ici, classés par quartier.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.montserrat(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 12.5,
+                height: 1.6,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Un dossier = une ville, avec bannière photo ----
+  Widget _buildDossier(String dossierNom, List<String> quartiers) {
+    final bool open = _dossiersOuverts.contains(dossierNom);
+    final int count = _compteDossier(dossierNom);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0A11),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: _kGold.withOpacity(open ? 0.5 : 0.26), width: 0.8),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 24, offset: const Offset(0, 12)),
+          BoxShadow(color: _kGold.withOpacity(open ? 0.14 : 0.05), blurRadius: 30, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(27),
+        child: Column(
+          children: [
+            _PressScale(
+              scale: 0.985,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() {
+                  if (open) {
+                    _dossiersOuverts.remove(dossierNom);
+                  } else {
+                    _dossiersOuverts.add(dossierNom);
+                  }
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeOutCubic,
+                height: open ? 104 : 132,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    AnimatedScale(
+                      scale: open ? 1.12 : 1.0,
+                      duration: const Duration(milliseconds: 900),
+                      curve: Curves.easeOutCubic,
+                      child: _photo(_kVilleImages[dossierNom] ?? ''),
+                    ),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.black.withOpacity(0.15), Colors.black.withOpacity(0.88)],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 18,
+                      bottom: 16,
+                      right: 70,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            dossierNom,
+                            style: GoogleFonts.cinzel(
+                              color: Colors.white,
+                              fontSize: 25,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            count == 0
+                                ? 'AUCUN LIEU'
+                                : (count == 1 ? '1 LIEU SAUVEGARDÉ' : '$count LIEUX SAUVEGARDÉS'),
+                            style: GoogleFonts.montserrat(
+                              color: _kChampagne.withOpacity(count == 0 ? 0.5 : 0.9),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 2.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (count > 0)
+                      Positioned(
+                        top: 14,
+                        left: 16,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _kGold,
+                            boxShadow: [BoxShadow(color: _kGold.withOpacity(0.5), blurRadius: 12)],
+                          ),
+                          child: Text(
+                            '$count',
+                            style: GoogleFonts.montserrat(
+                              color: Colors.black87,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      right: 14,
+                      bottom: 14,
+                      child: _glassBox(
+                        radius: 30,
+                        padding: const EdgeInsets.all(8),
+                        child: AnimatedRotation(
+                          turns: open ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 420),
+                          curve: Curves.easeOutCubic,
+                          child: const Icon(Icons.keyboard_arrow_down_rounded, color: _kChampagne, size: 22),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 450),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: open
+                  ? Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 16, 14, 6),
+                child: Column(
+                  children: quartiers.map((q) => _buildQuartier(dossierNom, q)).toList(),
+                ),
+              )
+                  : const SizedBox(width: double.infinity, height: 0),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Un quartier dans un dossier ----
+  Widget _buildQuartier(String dossierNom, String quartierNom) {
+    final String key = '$dossierNom-$quartierNom';
+    final bool open = _quartiersOuverts.contains(key);
+    final List<Map<String, dynamic>> lieux = _lieuxPour(dossierNom, quartierNom);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.035),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(open ? 0.12 : 0.07), width: 0.8),
+      ),
+      child: Column(
+        children: [
+          _PressScale(
+            scale: 0.985,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                if (open) {
+                  _quartiersOuverts.remove(key);
+                } else {
+                  _quartiersOuverts.add(key);
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  const Icon(Icons.diamond_outlined, color: _kGold, size: 13),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      quartierNom,
+                      style: GoogleFonts.montserrat(
+                        color: _kChampagne,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (lieux.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _kGold.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${lieux.length}',
+                        style: GoogleFonts.montserrat(
+                          color: _kGold,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 380),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(Icons.keyboard_arrow_down_rounded, color: _kChampagne.withOpacity(0.8), size: 22),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: open
+                ? Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: lieux.isEmpty
+                  ? Padding(
+                padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Aucun favori dans cette section.',
+                    style: GoogleFonts.montserrat(color: Colors.white38, fontSize: 12),
+                  ),
+                ),
+              )
+                  : Column(
+                children: List.generate(lieux.length, (i) {
+                  return _Reveal(
+                    key: ValueKey<String>('lieu-${lieux[i]['id']}'),
+                    delayMs: i * 90,
+                    dy: 16,
+                    child: _buildLieu(lieux[i], dossierNom),
+                  );
+                }),
+              ),
+            )
+                : const SizedBox(width: double.infinity, height: 0),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- Un lieu favori : titre, suppression, galerie horizontale ----
+  Widget _buildLieu(Map<String, dynamic> lieu, String dossierNom) {
+    final List<String> images = List<String>.from(lieu['images'] ?? []);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white.withOpacity(0.07), Colors.white.withOpacity(0.02)],
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.07), width: 0.8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.favorite_rounded, color: _kGold, size: 14),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  lieu['titre'].toString(),
+                  style: GoogleFonts.montserrat(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              _PressScale(
+                scale: 0.88,
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  _retirerFavori(lieu['id'].toString(), dossierNom);
+                },
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.redAccent.withOpacity(0.12),
+                    border: Border.all(color: Colors.redAccent.withOpacity(0.35), width: 0.8),
+                  ),
+                  child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                ),
+              ),
+            ],
+          ),
+          if (images.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 92,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: images.length,
+                separatorBuilder: (context, i) => const SizedBox(width: 8),
+                itemBuilder: (context, i) => ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: _photo(images[i], width: 124, height: 92),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dossiers = ['Bruxelles', 'Gand', 'Bruges', 'Anvers', 'Liège'];
@@ -1511,6 +3530,9 @@ class _FavorisFrPageState extends State<FavorisFrPage> {
       'Liège': ['Les Incontournables de Liège'],
     };
 
+    final int total = dossiers.fold<int>(0, (s, d) => s + _compteDossier(d));
+    final int villesActives = dossiers.where((d) => _compteDossier(d) > 0).length;
+
     return Theme(
       data: Theme.of(context).copyWith(
         splashColor: Colors.transparent,
@@ -1518,222 +3540,106 @@ class _FavorisFrPageState extends State<FavorisFrPage> {
         splashFactory: NoSplash.splashFactory,
         hoverColor: Colors.transparent,
       ),
-      child: Scaffold(
-        backgroundColor: const Color(0xFF070913),
-        body: SafeArea(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFFFBBF24)))
-              : ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-            physics: const BouncingScrollPhysics(),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        child: Scaffold(
+          backgroundColor: _kBg,
+          body: Stack(
+            fit: StackFit.expand,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.pop(context),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8.0),
+              const _AuroraBackdrop(
+                a: Color(0xFFD4AF37),
+                b: Color(0xFF7A1633),
+                c: Color(0xFF3B2A7A),
+              ),
+              SafeArea(
+                child: _isLoading
+                    ? const Center(
+                  child: SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(color: _kGold, strokeWidth: 1.6),
+                  ),
+                )
+                    : ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    // ---- Barre du haut ----
+                    _Reveal(
                       child: Row(
-                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 16),
-                          SizedBox(width: 8),
-                          Text('Retour', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500)),
+                          _PressScale(
+                            onTap: () => Navigator.pop(context),
+                            child: _glassPill(
+                              icon: Icons.arrow_back_ios_new_rounded,
+                              label: 'RETOUR',
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ),
-                  const Text('Mes Favoris', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 70),
-                ],
-              ),
-              const SizedBox(height: 25),
-              ...dossiers.map((dossierNom) {
-                final List<String> quartiers = quartiersParVille[dossierNom] ?? [];
-                final bool isDossierOpen = _dossiersOuverts.contains(dossierNom);
+                    const SizedBox(height: 28),
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 16.0),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.08)),
-                  ),
-                  child: Column(
-                    children: [
-                      // Entête du dossier (Bascule instantanée)
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          setState(() {
-                            if (isDossierOpen) {
-                              _dossiersOuverts.remove(dossierNom);
-                            } else {
-                              _dossiersOuverts.add(dossierNom);
-                            }
-                          });
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                dossierNom,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Icon(
-                                isDossierOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                color: isDossierOpen ? const Color(0xFFFBBF24) : Colors.white70,
-                              ),
-                            ],
+                    // ---- Titre ----
+                    _Reveal(
+                      delayMs: 90,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'VOTRE SÉLECTION',
+                            style: GoogleFonts.montserrat(
+                              color: _kChampagne.withOpacity(0.85),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 6,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          _GoldShimmerText(
+                            'Mes Favoris',
+                            style: GoogleFonts.cinzel(
+                              fontSize: 46,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 3,
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            height: 2,
+                            width: 72,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(2),
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF000000), Color(0xFFD4AF37), Color(0xFF7A0C0C)],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                    const SizedBox(height: 24),
 
-                      // Contenu du dossier sans animation (Instantané)
-                      if (isDossierOpen)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0),
-                          child: quartiers.isNotEmpty
-                              ? Column(
-                            children: quartiers.map((quartierNom) {
-                              final String keyQuartier = '$dossierNom-$quartierNom';
-                              final bool isQuartierOpen = _quartiersOuverts.contains(keyQuartier);
-
-                              final List<String> currentFavorisIds = dossierNom == 'Bruxelles' ? _favorisBruxellesIds
-                                  : dossierNom == 'Gand' ? _favorisGandIds
-                                  : dossierNom == 'Bruges' ? _favorisBrugesIds
-                                  : dossierNom == 'Anvers' ? _favorisAnversIds
-                                  : _favorisLiegeIds;
-
-                              final lieuxQuartier = currentFavorisIds
-                                  .where((id) => _tousLesLieux.containsKey(id))
-                                  .map((id) {
-                                var item = Map<String, dynamic>.from(_tousLesLieux[id]!);
-                                item['id'] = id;
-                                return item;
-                              })
-                                  .where((item) => item['dossier'] == dossierNom && item['quartier'] == quartierNom)
-                                  .toList();
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12.0),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.02),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: Colors.white.withOpacity(0.05)),
-                                ),
-                                child: Column(
-                                  children: [
-                                    // Entête du quartier (Bascule instantanée)
-                                    GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTap: () {
-                                        setState(() {
-                                          if (isQuartierOpen) {
-                                            _quartiersOuverts.remove(keyQuartier);
-                                          } else {
-                                            _quartiersOuverts.add(keyQuartier);
-                                          }
-                                        });
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              quartierNom,
-                                              style: TextStyle(
-                                                color: Colors.amber.shade100,
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            Icon(
-                                              isQuartierOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                              color: Colors.amber.shade200,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-
-                                    // Contenu du quartier sans animation (Instantané)
-                                    if (isQuartierOpen)
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                        child: lieuxQuartier.isEmpty
-                                            ? Text('Aucun favori dans cette section.', style: TextStyle(color: Colors.grey[400], fontSize: 13))
-                                            : Column(
-                                          children: lieuxQuartier.map((lieu) {
-                                            final List<String> images = List<String>.from(lieu['images'] ?? []);
-                                            return Container(
-                                              margin: const EdgeInsets.only(top: 10.0),
-                                              padding: const EdgeInsets.all(12.0),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white.withOpacity(0.04),
-                                                borderRadius: BorderRadius.circular(14),
-                                              ),
-                                              child: Column(
-                                                children: [
-                                                  Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      Expanded(child: Text(lieu['titre'], style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600))),
-                                                      IconButton(
-                                                        onPressed: () => _retirerFavori(lieu['id'], dossierNom),
-                                                        icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
-                                                        padding: EdgeInsets.zero,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 12),
-                                                  Wrap(
-                                                    spacing: 8,
-                                                    runSpacing: 8,
-                                                    children: images.map((path) => ClipRRect(
-                                                      borderRadius: BorderRadius.circular(10),
-                                                      child: Image.asset(
-                                                        path,
-                                                        width: 70,
-                                                        height: 70,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder: (context, error, stackTrace) {
-                                                          return Container(
-                                                            width: 70,
-                                                            height: 70,
-                                                            color: Colors.grey[850],
-                                                            child: const Icon(Icons.broken_image_rounded, color: Colors.white54, size: 24),
-                                                          );
-                                                        },
-                                                      ),
-                                                    )).toList(),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          )
-                              : Text('Aucun favori pour le moment.', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
+                    if (total == 0)
+                      _Reveal(delayMs: 200, child: _buildVide())
+                    else ...[
+                      _Reveal(delayMs: 200, child: _buildStats(total, villesActives)),
+                      const SizedBox(height: 28),
+                      for (int i = 0; i < dossiers.length; i++)
+                        _Reveal(
+                          delayMs: 320 + i * 100,
+                          child: _buildDossier(dossiers[i], quartiersParVille[dossiers[i]] ?? []),
                         ),
                     ],
-                  ),
-                );
-              }).toList(),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

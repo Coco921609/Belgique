@@ -25,8 +25,8 @@ android {
         applicationId = "com.belgique.belgique"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 19
-        versionName = "14.0.0"
+        versionCode = 21
+        versionName = "18.0.0"
     }
 
     signingConfigs {

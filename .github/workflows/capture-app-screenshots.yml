@@ -1,0 +1,126 @@
+name: Capture real app screens
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/screenshots/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: belgique-app-screenshots
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build Flutter screenshot version
+        run: |
+          flutter pub get
+          flutter build web --release --base-href "/" -t tool/screenshot_harness.dart
+
+      - name: Install Chromium and Playwright
+        run: |
+          npm install --no-save playwright http-server
+          npx playwright install --with-deps chromium
+
+      - name: Capture the real Flutter screens
+        run: |
+          mkdir -p docs/screenshots
+          npx http-server build/web -p 4173 -c-1 > /tmp/belgique-server.log 2>&1 &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID || true" EXIT
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          const BASE = 'http://127.0.0.1:4173/?screen=';
+          const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({
+              viewport: { width: 430, height: 932 },
+              deviceScaleFactor: 1,
+              isMobile: true,
+              hasTouch: true,
+              reducedMotion: 'reduce'
+            });
+
+            const capture = async (screen, filename) => {
+              const page = await context.newPage();
+              await page.goto(BASE + screen, { waitUntil: 'networkidle' });
+              await wait(3200);
+              await page.screenshot({
+                path: `docs/screenshots/${filename}.png`,
+                fullPage: false,
+                animations: 'disabled'
+              });
+              console.log('Captured 430x932 screen:', screen, '->', filename);
+              await page.close();
+            };
+
+          await capture('language', '01-choix-langue');
+          await capture('home-fr', '02-accueil-francais');
+          await capture('home-en', '03-home-english');
+          await capture('brussels', '04-bruxelles');
+          await capture('ghent', '05-gand');
+          await capture('bruges', '06-bruges');
+          await capture('antwerp', '07-anvers');
+          await capture('liege', '08-liege');
+
+            await context.close();
+            await browser.close();
+          })().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Verify all screenshots exist and are distinct
+        run: |
+          expected=(
+            01-choix-langue
+            02-accueil-francais
+            03-home-english
+            04-bruxelles
+            05-gand
+            06-bruges
+            07-anvers
+            08-liege
+          )
+          for name in "${expected[@]}"; do
+            test -s "docs/screenshots/$name.png" || {
+              echo "Missing screenshot: $name.png"
+              exit 1
+            }
+          done
+
+          declare -A hashes
+          for name in "${expected[@]}"; do
+            hash=$(sha256sum "docs/screenshots/$name.png" | cut -d ' ' -f 1)
+            if [[ -n "${hashes[$hash]:-}" ]]; then
+              echo "Duplicate screenshot: $name.png matches ${hashes[$hash]}.png"
+              exit 1
+            fi
+            hashes[$hash]="$name"
+          done
+
+          echo "Verified ${#expected[@]} distinct mobile screenshots (430x932)."
+          ls -lh docs/screenshots/*.png
+
+      - name: Commit screenshots
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: refresh real Flutter app screenshots"
+          file_pattern: "docs/screenshots/*.png"

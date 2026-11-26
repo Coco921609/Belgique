@@ -110,45 +110,127 @@ flutter build web --release --base-href "/Belgique/"
 </p>
 
 
-## ✦ Ouvrir ce projet Flutter dans Android Studio
 
-### 1. Cloner le dépôt et entrer dans le dossier
+## ✦ Ouvrir ce projet Flutter dans Android Studio — Windows, macOS et Linux
+
+Ce guide explique comment récupérer **Belgique**, installer les dépendances et lancer l’application depuis Android Studio.
+
+### 1. Installer les outils nécessaires
+
+Installez les outils correspondant à votre système :
+
+- **Flutter SDK :** [Installation officielle de Flutter](https://docs.flutter.dev/get-started/install)
+- **Android Studio :** [Télécharger Android Studio](https://developer.android.com/studio)
+- **Git :** [Télécharger Git](https://git-scm.com/downloads)
+
+Dans Android Studio, ouvrez **Settings / Preferences → Plugins** et vérifiez que les plugins **Flutter** et **Dart** sont installés. Suivez les instructions du plugin Flutter si Android Studio vous demande d’installer le SDK Flutter.
+
+### 2. Télécharger le projet
+
+Ouvrez un terminal (PowerShell sous Windows, Terminal sous macOS ou Linux), puis exécutez :
 
 ```bash
 git clone https://github.com/Coco921609/Belgique.git
 cd Belgique
 ```
 
-### 2. Vérifier Flutter et installer les dépendances
+Le dossier `Belgique` contient le fichier `pubspec.yaml` : c’est ce dossier qu’il faudra ouvrir dans Android Studio.
 
-Exécutez ces commandes à la racine du projet, dans le dossier qui contient `pubspec.yaml` :
+### 3. Configuration sous Windows
+
+1. Installez Flutter et Git avec les liens ci-dessus.
+2. Ajoutez le dossier `flutter/bin` au **PATH** de Windows si l’installateur ne l’a pas fait.
+3. Installez Android Studio, puis ouvrez **SDK Manager** pour installer le SDK Android et les outils de plateforme nécessaires.
+4. Ouvrez **PowerShell** et vérifiez l’installation :
+
+```powershell
+flutter doctor
+```
+
+5. Dans Android Studio, cliquez sur **Open**, sélectionnez le dossier `Belgique`, puis validez.
+6. Ouvrez le terminal intégré d’Android Studio et exécutez :
+
+```bash
+flutter pub get
+flutter devices
+flutter run
+```
+
+### 4. Configuration sous macOS (Android et iOS)
+
+1. Installez Flutter, Git et Android Studio.
+2. Pour compiler ou lancer l’application sur iPhone/iPad, installez **Xcode** depuis le Mac App Store.
+3. Initialisez les outils Xcode dans Terminal :
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+```
+
+4. Vérifiez la configuration :
 
 ```bash
 flutter doctor
-flutter pub get
 ```
 
-### 3. Ouvrir le projet dans Android Studio
-
-**Windows (PowerShell), macOS ou Linux** — si la commande `studio` est disponible dans le PATH :
-
-```bash
-studio .
-```
-
-Sur macOS, vous pouvez aussi utiliser :
+5. Clonez le dépôt (étape 2), puis ouvrez le projet dans Android Studio :
 
 ```bash
 open -a "Android Studio" .
 ```
 
-Si `studio` n’est pas reconnu, ouvrez Android Studio manuellement, cliquez sur **Open**, puis sélectionnez le dossier `Belgique`.
-
-### 4. Démarrer l’application
-
-Démarrez un émulateur Android ou connectez un téléphone avec le débogage USB activé, puis lancez :
+6. Dans le terminal d’Android Studio, récupérez les dépendances et lancez l’application :
 
 ```bash
+flutter pub get
 flutter devices
 flutter run
 ```
+
+Pour iOS, sélectionnez un simulateur iPhone dans Xcode ou connectez un iPhone configuré pour le développement. Acceptez les éventuelles demandes de confiance et de signature de Xcode.
+
+### 5. Configuration sous Linux
+
+1. Installez Git et Flutter en suivant le [guide Flutter pour Linux](https://docs.flutter.dev/get-started/install/linux).
+2. Installez Android Studio et les outils Android SDK depuis **SDK Manager**.
+3. Vérifiez la configuration dans un terminal :
+
+```bash
+flutter doctor
+```
+
+4. Clonez le dépôt (étape 2), puis ouvrez le dossier du projet dans Android Studio. Si la commande est disponible :
+
+```bash
+studio .
+```
+
+Sinon, lancez Android Studio depuis le menu des applications, cliquez sur **Open** et choisissez le dossier `Belgique`.
+
+5. Dans le terminal intégré, exécutez :
+
+```bash
+flutter pub get
+flutter devices
+flutter run
+```
+
+### 6. Vérifier et lancer le projet
+
+Dans Android Studio :
+
+1. Attendez la fin de l’indexation du projet.
+2. Vérifiez que le fichier `pubspec.yaml` est bien à la racine du projet ouvert.
+3. Sélectionnez un émulateur ou un appareil connecté dans la liste des appareils.
+4. Cliquez sur **Run ▶** ou lancez `flutter run` dans le terminal.
+
+Si Flutter signale un problème de configuration, relancez `flutter doctor` et suivez les indications affichées.
+
+> **Important pour iOS :** la compilation et l’exécution sur simulateur ou appareil iOS nécessitent un Mac avec Xcode. Elles ne peuvent pas être réalisées directement depuis Windows ou Linux.
+
+### 7. Liens de l’application
+
+- **Android :** [Télécharger Belgique sur Google Play](https://play.google.com/store/apps/details?id=com.belgique.belgique)
+- **iOS / Web :** [Ouvrir Belgique](https://coco921609.github.io/Belgique/)
+- **Code source :** [Coco921609/Belgique](https://github.com/Coco921609/Belgique)
+- **Documentation Flutter :** [docs.flutter.dev](https://docs.flutter.dev/)
